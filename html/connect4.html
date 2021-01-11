@@ -1,0 +1,232 @@
+<html>
+<head>
+</head>
+<body>
+<script>
+
+function get_win_positions_connect4() {
+    let win_positions = [];
+    for(let col of Array(7).keys()) {
+        let c = [[0, 7, 14, 21], [7, 14, 21, 28], [14, 21, 28, 35]].map(j => j.map(i => i+col));
+        win_positions.push(...c);
+    }
+
+    for(let row of Array(6).keys()) {
+        let c = [[0, 1, 2, 3], [1, 2, 3, 4], [2, 3, 4, 5], [3, 4, 5, 6]].map(j => j.map(i => i + 7*row));
+        win_positions.push(...c);
+    }
+
+    let start_pts = [0, 1, 2, 3, 7, 8, 9, 10, 14, 15, 16, 17];
+    let c = [];
+    for(let pt of start_pts) {
+        let ci = [0, 1, 2, 3].map(i => 8*i + pt);
+        c.push(ci);
+    }
+    win_positions.push(...c);
+
+    start_pts = [3, 4, 5, 6, 10, 11, 12, 13, 17, 18, 19, 20]; 
+    c = [];
+    for(let pt of start_pts) {
+        let ci = [0, 1, 2, 3].map(i => 8*i + pt);
+        c.push(ci);
+    }
+    win_positions.push(...c);
+    return win_positions;
+}
+
+function valid_action_connect4(board) {
+    let valid_actions = [];
+    for(let i of Array(7).keys()) {
+        let row_idxs = [...Array(6).keys()].reverse().map(j => i + j * 7);
+        for(let idx of row_idxs) {
+            if(board[idx] === 0) {
+                valid_actions.push(idx);
+                break;
+            }
+        }
+    }
+    return valid_actions;
+}
+
+class Connect4 {
+    constructor(board=null, played=null, terminated=null, reward=null) {
+        if(board === null) {
+            this.raw_board = [...Array(42).keys()].map(i => 0);
+        } else {
+            this.raw_board = board;
+        }
+
+        if(played === null) {
+            this.played = -1;
+        } else {
+            this.played = played;
+        }
+
+        if(terminated === null) {
+            this.terminated = false;
+        } else {
+            this.terminated = terminated;
+        }
+
+        if(reward === null) {
+            this.raw_reward = 0;
+        } else {
+            this.raw_reward = reward;
+        }
+    }
+
+    state() {
+        return {
+            board: this.raw_board,
+            played: this.played,
+            terminated: this.terminated,
+            reward: this.raw_reward
+        };
+    }
+
+    valid_actions() {
+        let ret = [];
+        if(this.terminated === true) {
+            return ret;
+        }
+        ret = valid_action_connect4(this.raw_board);
+        return ret;
+    }
+
+    board(perspective=null) {
+        if(perspective === null) {
+            return this.raw_board;
+        }
+        else if(perspective === "played") {
+            return this.raw_board.map(k => k * this.played);
+        }
+        else if(perspective === "to_play") {
+            return this.raw_board.map(k => k * -this.played);
+        }
+        return this.raw_board.map(k => k * perspective);
+    }
+
+    reward(perspective=null) {
+        if(perspective === null) {
+            return this.raw_reward;
+        }
+        else if(perspective === "played") {
+            return this.raw_reward * this.played;
+        }
+        else if(perspective === "to_play") {
+            return this.raw_reward * -this.played;
+        }
+        return this.raw_reward * perspective;
+    }
+
+    _eval_win(player) {
+        let self = this;
+        let win_positions = get_win_positions_connect4();
+        let has_win = win_positions.some(function(win_position) {
+            return win_position.every(
+                (value, index) => player === self.raw_board[value]
+            ); 
+        });
+        return has_win;
+    }
+
+    step(action, debug=false) {
+        if(
+            this.terminated === false &&
+            this.valid_actions().includes(action)
+        ) {
+            this.raw_board[action] = -this.played;
+        } else {
+            if(debug === false) {
+                console.log("step: invalid action");
+            }
+            if(this.terminated === false) {
+                this.raw_reward = this.played;
+            }
+            this.terminated = true;
+        }
+
+        this.played = -this.played
+
+        if(this._eval_win(this.played) === true) {
+            if(debug === false) {
+                console.log("step: eval_win");
+            }
+            if(this.terminated === false) {
+                this.raw_reward = this.played;
+            }
+            this.terminated = true;
+        }
+
+        if(this.valid_actions().length === 0) {
+            if(debug === false) {
+                console.log("step: no more valid actions");
+            }
+            this.terminated = true;
+        }
+    }
+
+    render() {
+        let s = "";
+        for(let j of Array(6).keys()) {
+            s += "[ ";
+            for(let i of Array(7).keys()) {
+                let v = this.raw_board[+j * 7 + +i];
+                if(v === 1) { s += "O"; }
+                else if(v === -1) { s += "X"; }
+                else { s += " "; }
+                s += " ";
+            }
+            s += "| ";
+
+            for(let i of Array(7).keys()) {
+                let idx = +j * 7 + +i;
+                let st = idx.toString().padStart(2, " ");
+                s += st + " ";
+            }
+            s += "]\n";
+        }
+        console.log(s);
+    }
+}
+
+function random_choice(n) {
+    return Math.floor(Math.random() * n);
+}
+
+function random_rollout(g, n_steps=null, debug=false) {
+    let current_player = g.played * -1;
+    if(debug === true) {
+        console.log("current player: " + current_player.toString());
+    }
+    let step = 0;
+    while(g.terminated === false) {
+        let valid_actions = g.valid_actions();
+        let action_idx = random_choice(valid_actions.length);
+        let action = valid_actions[action_idx];
+        g.step(action);
+        if(debug === true) {
+            console.log("player " + g.played.toString() + " plays");
+            g.render();
+        }
+        step += 1;
+        if(n_steps !== null) {
+            if(step >= n_steps) {
+                break;
+            }
+        }
+    }
+
+    if(debug === true) {
+        console.log("final board state");
+        g.render();
+        console.log("final reward (as current player): " +
+                    g.reward(perspective=current_player).toString())
+    }
+    return g.reward(perspective=current_player);
+}
+
+</script>
+
+</body>
+</html>
